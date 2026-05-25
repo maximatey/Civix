@@ -1,0 +1,11 @@
+{
+  "framework": "nextjs",
+  "functions": {
+    "src/app/api/score-cv/route.ts": {
+      "maxDuration": 30
+    },
+    "src/app/api/generate-pdf/route.ts": {
+      "maxDuration": 30
+    }
+  }
+}

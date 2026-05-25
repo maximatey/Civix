@@ -162,21 +162,19 @@ export function ResultScore({
 
       if (!res.ok) {
         const errorData = await res.json();
-        throw new Error(errorData.message || "Gagal mengunduh PDF.");
+        throw new Error(errorData.message || "Gagal membuat CV.");
       }
 
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `CV_ATS_Optimized_${pdfName.replace(/\.pdf$/i, "")}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
+      // API now returns HTML — open in a new tab so browser can print-to-PDF
+      const html = await res.text();
+      const blob = new Blob([html], { type: "text/html" });
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      // Clean up after a delay to let the tab load
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (err: any) {
-      console.error("Error downloading PDF:", err);
-      alert(err?.message || "Terjadi kesalahan saat mengunduh PDF CV Anda.");
+      console.error("Error generating CV:", err);
+      alert(err?.message || "Terjadi kesalahan saat membuat CV Anda.");
     } finally {
       setIsDownloading(false);
     }
@@ -462,7 +460,7 @@ export function ResultScore({
               </div>
               <div>
                 <h4 className="text-sm font-bold text-foreground">Akses Premium Terbuka</h4>
-                <p className="text-xs text-muted-foreground">Silakan klik unduh di sebelah kanan untuk mendownload CV baru Anda.</p>
+                <p className="text-xs text-muted-foreground">Klik tombol di sebelah kanan. CV baru Anda akan terbuka di tab baru — klik "Simpan sebagai PDF" untuk mengunduhnya.</p>
               </div>
             </div>
 
@@ -475,12 +473,12 @@ export function ResultScore({
                 {isDownloading ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin text-white" />
-                    Menyusun & Mengunduh PDF...
+                    Menyusun CV Anda...
                   </>
                 ) : (
                   <>
                     <Download className="w-4 h-4 text-white" />
-                    Unduh CV Hasil Optimalisasi AI (PDF)
+                    Buat & Unduh CV Hasil Optimalisasi AI
                   </>
                 )}
               </span>
