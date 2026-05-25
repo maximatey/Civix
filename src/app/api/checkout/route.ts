@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/db";
 
 export async function POST(req: NextRequest) {
   try {
@@ -9,15 +8,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { error: "Permintaan Tidak Valid", message: "Session ID wajib dikirim." },
         { status: 400 }
-      );
-    }
-
-    // 1. Verify session exists in our DB
-    const session = getSession(sessionId);
-    if (!session) {
-      return NextResponse.json(
-        { error: "Session Tidak Ditemukan", message: "Sesi analisis CV tidak valid." },
-        { status: 404 }
       );
     }
 

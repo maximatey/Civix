@@ -1,28 +1,44 @@
-// In-memory session store — works on Vercel serverless (warm container)
-// Sessions persist for the duration of the payment flow (minutes), which is all we need.
+// Stateless session helpers using HMAC-signed payment tokens
+// No database required — works across all serverless function instances on Vercel
 
-export interface SessionData {
-  status: "PENDING" | "PAID";
-  cvText?: string;
-  jobDescription?: string;
-  pdfName?: string;
-  score?: number;
-  missingKeywords?: string[];
-  roast?: string;
-  createdAt: number;
+import crypto from "crypto";
+
+const SECRET = process.env.PAYMENT_SECRET || "sivix-dev-secret-2025";
+
+/**
+ * Create a signed payment proof token for a given sessionId.
+ * The frontend stores this and sends it with the generate-pdf request.
+ */
+export function createPaymentToken(sessionId: string): string {
+  const timestamp = Date.now().toString();
+  const payload = `${sessionId}:${timestamp}`;
+  const sig = crypto.createHmac("sha256", SECRET).update(payload).digest("hex");
+  // Encode as base64url: "sessionId:timestamp:sig"
+  return Buffer.from(`${payload}:${sig}`).toString("base64url");
 }
 
-// Global Map survives across requests within the same serverless container instance
-const sessions = new Map<string, SessionData>();
+/**
+ * Verify a payment token. Returns true if the signature is valid.
+ * Tokens expire after 1 hour.
+ */
+export function verifyPaymentToken(token: string): { valid: boolean; sessionId?: string } {
+  try {
+    const decoded = Buffer.from(token, "base64url").toString("utf8");
+    const parts = decoded.split(":");
+    if (parts.length !== 3) return { valid: false };
 
-export function getSession(sessionId: string): SessionData | null {
-  return sessions.get(sessionId) ?? null;
-}
+    const [sessionId, timestamp, sig] = parts;
+    const payload = `${sessionId}:${timestamp}`;
+    const expectedSig = crypto.createHmac("sha256", SECRET).update(payload).digest("hex");
 
-export function saveSession(sessionId: string, data: Partial<SessionData>): void {
-  const existing = sessions.get(sessionId) ?? {
-    status: "PENDING" as const,
-    createdAt: Date.now(),
-  };
-  sessions.set(sessionId, { ...existing, ...data } as SessionData);
+    if (sig !== expectedSig) return { valid: false };
+
+    // Expire tokens after 1 hour
+    const age = Date.now() - parseInt(timestamp, 10);
+    if (age > 3600_000) return { valid: false };
+
+    return { valid: true, sessionId };
+  } catch {
+    return { valid: false };
+  }
 }

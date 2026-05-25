@@ -1,35 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/db";
+import { verifyPaymentToken } from "@/lib/db";
 
+// Stateless payment check — verifies HMAC token, no DB needed
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const sessionId = searchParams.get("sessionId");
+    const paymentToken = searchParams.get("paymentToken");
 
-    if (!sessionId) {
-      return NextResponse.json(
-        { error: "Permintaan Tidak Valid", message: "Session ID wajib dilampirkan." },
-        { status: 400 }
-      );
+    if (!paymentToken) {
+      return NextResponse.json({ status: "PENDING" });
     }
 
-    const session = getSession(sessionId);
-    if (!session) {
-      return NextResponse.json(
-        { error: "Session Tidak Ditemukan", message: "Sesi tidak valid." },
-        { status: 404 }
-      );
-    }
-
-    return NextResponse.json({
-      sessionId,
-      status: session.status,
-    });
+    const { valid } = verifyPaymentToken(paymentToken);
+    return NextResponse.json({ status: valid ? "PAID" : "PENDING" });
   } catch (error: any) {
     console.error("Error checking payment status:", error);
-    return NextResponse.json(
-      { error: "Internal Error", message: "Gagal memeriksa status pembayaran." },
-      { status: 500 }
-    );
+    return NextResponse.json({ status: "PENDING" });
   }
 }

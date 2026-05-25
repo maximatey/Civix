@@ -16,16 +16,18 @@ interface UploadedFileInfo {
 }
 
 interface APIResult {
-  sessionId: string;
   score: number;
   missingKeywords: string[];
   roast: string;
+  cvText: string;
+  jobDescription: string;
+  pdfName: string;
 }
 
 export default function Home() {
   const [state, setState] = useState<AppState>("idle");
   const [fileInfo, setFileInfo] = useState<UploadedFileInfo>({ name: "", size: 0 });
-  const [result, setResult] = useState<APIResult>({ sessionId: "", score: 0, missingKeywords: [], roast: "" });
+  const [result, setResult] = useState<APIResult>({ score: 0, missingKeywords: [], roast: "", cvText: "", jobDescription: "", pdfName: "" });
   const [error, setError] = useState<{ title: string; message: string } | null>(null);
 
   const handleAnalyze = async (payload: {
@@ -64,10 +66,12 @@ export default function Home() {
       }
 
       setResult({
-        sessionId: data.sessionId,
         score: data.score,
         missingKeywords: data.missingKeywords || [],
         roast: data.roast || "",
+        cvText: data.cvText || "",
+        jobDescription: payload.jobDescription,
+        pdfName: data.pdfName || payload.pdfName,
       });
       setState("result");
     } catch (err: any) {
@@ -83,7 +87,7 @@ export default function Home() {
   const handleReset = () => {
     setState("idle");
     setFileInfo({ name: "", size: 0 });
-    setResult({ sessionId: "", score: 0, missingKeywords: [], roast: "" });
+    setResult({ score: 0, missingKeywords: [], roast: "", cvText: "", jobDescription: "", pdfName: "" });
     setError(null);
   };
 
@@ -101,14 +105,6 @@ export default function Home() {
             </span>
           </div>
 
-          <nav className="hidden sm:flex items-center gap-6 text-sm font-medium text-muted-foreground">
-            <a href="#" className="hover:text-foreground transition-colors">Fitur</a>
-            <a href="#" className="hover:text-foreground transition-colors flex items-center gap-1">
-              Harga 
-              <span className="text-[10px] bg-primary/25 border border-primary/45 px-1.5 py-0.2 rounded-full font-bold text-primary-foreground">Promo</span>
-            </a>
-            <a href="#" className="hover:text-foreground transition-colors">Testimoni</a>
-          </nav>
 
           <div className="flex items-center gap-3">
             <span className="text-xs text-muted-foreground bg-secondary px-2.5 py-1 rounded-full border border-border flex items-center gap-1.5">
@@ -171,8 +167,9 @@ export default function Home() {
                 score={result.score}
                 missingKeywords={result.missingKeywords}
                 roast={result.roast}
-                pdfName={fileInfo.name}
-                sessionId={result.sessionId}
+                pdfName={result.pdfName || fileInfo.name}
+                cvText={result.cvText}
+                jobDescription={result.jobDescription}
                 onReset={handleReset}
               />
             </motion.div>

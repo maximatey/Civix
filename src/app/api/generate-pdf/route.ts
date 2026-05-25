@@ -1,76 +1,74 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/db";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { OpenAI } from "openai";
+import { verifyPaymentToken } from "@/lib/db";
 
 export const runtime = "nodejs";
-// Keep well under Vercel Free 10s limit — no Puppeteer, pure AI + HTML return
-export const maxDuration = 60;
+export const maxDuration = 30;
 
 export async function POST(req: NextRequest) {
   try {
-    const { sessionId } = await req.json();
+    const body = await req.json();
+    const { cvText, jobDescription, pdfName, paymentToken } = body;
 
-    if (!sessionId) {
+    // 1. Verify signed payment token — stateless, no DB lookup needed
+    if (!paymentToken) {
       return NextResponse.json(
-        { error: "Permintaan Tidak Valid", message: "Session ID wajib dilampirkan." },
-        { status: 400 }
+        { error: "Akses Ditolak", message: "Token pembayaran tidak ditemukan." },
+        { status: 403 }
       );
     }
-
-    // 1. Verify session exists and is PAID
-    const session = getSession(sessionId);
-    if (!session) {
-      return NextResponse.json(
-        { error: "Session Tidak Ditemukan", message: "Sesi tidak valid atau sudah kadaluarsa." },
-        { status: 404 }
-      );
-    }
-
-    if (session.status !== "PAID") {
+    const { valid } = verifyPaymentToken(paymentToken);
+    if (!valid) {
       return NextResponse.json(
         {
           error: "Akses Ditolak",
-          message: "Pembayaran untuk sesi ini belum lunas. Silakan lakukan pembayaran terlebih dahulu.",
+          message: "Token pembayaran tidak valid atau sudah kadaluarsa. Silakan lakukan pembayaran ulang.",
         },
         { status: 403 }
       );
     }
 
-    // 2. Setup AI provider
+    // 2. Validate required data
+    if (!cvText || !jobDescription) {
+      return NextResponse.json(
+        { error: "Data Tidak Lengkap", message: "Data CV atau Job Description tidak ditemukan." },
+        { status: 400 }
+      );
+    }
+
+    // 3. Setup AI provider
     const geminiKey = process.env.GEMINI_API_KEY;
     const openAIKey = process.env.OPENAI_API_KEY;
     if (!geminiKey && !openAIKey) {
-      throw new Error("API Key belum dikonfigurasi di server (.env.local).");
+      throw new Error("API Key belum dikonfigurasi di server.");
     }
     const isGemini = !!geminiKey;
 
-    // 3. Build prompts
+    // 4. Build prompts
     const systemPrompt = `Rewrite the CV into professional corporate English or Indonesian (matching the JD). Use the Harvard Resume format (Action Verb + Task + Metric). Return the response in clean HTML.
 Follow these formatting instructions:
-- Do NOT output markdown code blocks (like \`\`\`html). Output raw HTML text directly.
+- Do NOT output markdown code blocks. Output raw HTML text directly.
 - Use <h1> for the candidate's full name at the top.
 - Use <div class="contact-info"> for email, phone, LinkedIn.
 - Use <div class="section"> wrapping each section (Education, Experience, Skills, etc).
 - Use <div class="section-header"> for section titles.
 - Use <div class="item-header"> and <div class="item-subheader"> for job/edu entries.
-- Use <ul><li> for bullet points (achievements), each starting with a strong action verb.
+- Use <ul><li> for bullet points starting with a strong action verb.
 - Do NOT include <html>, <head>, <body> tags. Just output the inner body content.`;
 
-    const userPrompt = `Target Job Description:\n${session.jobDescription}\n\nCandidate Original CV Text:\n${session.cvText}`;
+    const userPrompt = `Target Job Description:\n${jobDescription}\n\nCandidate Original CV Text:\n${cvText}`;
 
-    // 4. Call AI
+    // 5. Call AI
     let rawHtml = "";
 
     if (isGemini) {
       const genAI = new GoogleGenerativeAI(geminiKey!);
       const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-      console.log(`Calling Gemini to rewrite CV for session ${sessionId}...`);
       const result = await model.generateContent(`${systemPrompt}\n\n${userPrompt}`);
       rawHtml = result.response.text();
     } else {
       const openai = new OpenAI({ apiKey: openAIKey! });
-      console.log(`Calling OpenAI to rewrite CV for session ${sessionId}...`);
       const completion = await openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
@@ -82,20 +80,21 @@ Follow these formatting instructions:
       rawHtml = completion.choices[0]?.message?.content || "";
     }
 
-    // Clean up any markdown wrapping
+    // Clean markdown wrapping if AI included it
     rawHtml = rawHtml
       .replace(/^```html\s*/i, "")
       .replace(/^```\s*/, "")
       .replace(/\s*```$/, "")
       .trim();
 
-    // 5. Wrap in full printable HTML document with Harvard CSS
+    // 6. Wrap in full printable Harvard-style HTML
+    const safeFileName = (pdfName || "Resume").replace(/\.pdf$/i, "");
     const fullHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CV ATS Optimized — ${session.pdfName?.replace(".pdf", "") ?? "Resume"}</title>
+  <title>CV ATS Optimized — ${safeFileName}</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -155,14 +154,12 @@ Follow these formatting instructions:
     li { margin-bottom: 3px; font-size: 9pt; text-align: justify; }
     p { margin-bottom: 4px; font-size: 9pt; }
     .skills-list { font-size: 9pt; }
-
-    /* Print styles */
     @media print {
       body { margin: 0; padding: 0; max-width: 100%; }
       @page { size: A4; margin: 15mm; }
+      .print-bar { display: none; }
+      body.has-bar { padding-top: 0 !important; }
     }
-
-    /* Print button — hidden when printing */
     .print-bar {
       position: fixed;
       top: 0; left: 0; right: 0;
@@ -174,11 +171,7 @@ Follow these formatting instructions:
       z-index: 1000;
       box-shadow: 0 2px 10px rgba(0,0,0,0.3);
     }
-    .print-bar span {
-      color: #fff;
-      font-family: 'Arial', sans-serif;
-      font-size: 13px;
-    }
+    .print-bar span { color: #fff; font-family: Arial, sans-serif; font-size: 13px; }
     .print-bar span strong { color: #a78bfa; }
     .print-btn {
       background: linear-gradient(135deg, #7c3aed, #4f46e5);
@@ -189,14 +182,9 @@ Follow these formatting instructions:
       cursor: pointer;
       font-size: 13px;
       font-weight: bold;
-      font-family: 'Arial', sans-serif;
-      transition: opacity 0.2s;
+      font-family: Arial, sans-serif;
     }
     .print-btn:hover { opacity: 0.85; }
-    @media print {
-      .print-bar { display: none; }
-      body { padding-top: 0 !important; }
-    }
     body.has-bar { padding-top: 50px; }
   </style>
 </head>
@@ -206,19 +194,13 @@ Follow these formatting instructions:
     <button class="print-btn" onclick="window.print()">⬇ Simpan sebagai PDF</button>
   </div>
   ${rawHtml}
-  <script>
-    // Auto-trigger print dialog after a short delay
-    setTimeout(() => window.print(), 800);
-  </script>
+  <script>setTimeout(() => window.print(), 800);</script>
 </body>
 </html>`;
 
-    // 6. Return full HTML document (frontend will open in new tab)
     return new NextResponse(fullHtml, {
       status: 200,
-      headers: {
-        "Content-Type": "text/html; charset=utf-8",
-      },
+      headers: { "Content-Type": "text/html; charset=utf-8" },
     });
   } catch (error: any) {
     console.error("Error in generate-pdf route:", error);

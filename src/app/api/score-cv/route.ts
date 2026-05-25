@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { OpenAI } from "openai";
-import { saveSession } from "@/lib/db";
 
 // Force Node.js runtime
 export const runtime = "nodejs";
@@ -167,19 +166,16 @@ Output MUST be valid JSON with no markdown formatting.`;
       cvText = parsedResult.cvText;
     }
 
-    // 6. Save session
-    const sessionId = crypto.randomUUID();
-    saveSession(sessionId, {
-      status: "PENDING",
-      cvText,
-      jobDescription,
-      pdfName: file.name,
+    // 6. Return all data to frontend — no server-side session needed
+    // Frontend stores cvText + jobDescription and sends them back for PDF generation
+    return NextResponse.json({
       score,
       missingKeywords: missing_keywords,
       roast,
+      cvText,
+      jobDescription,
+      pdfName: file.name,
     });
-
-    return NextResponse.json({ sessionId, score, missingKeywords: missing_keywords, roast });
   } catch (error: any) {
     console.error("Error in score-cv API route:", error);
     return NextResponse.json(

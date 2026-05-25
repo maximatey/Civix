@@ -27,11 +27,12 @@ import {
 } from "@/components/ui/dialog";
 
 interface ResultScoreProps {
-  score?: number; // 0 to 100
+  score?: number;
   missingKeywords?: string[];
   roast?: string;
   pdfName: string;
-  sessionId: string;
+  cvText: string;
+  jobDescription: string;
   onReset: () => void;
 }
 
@@ -40,7 +41,8 @@ export function ResultScore({
   missingKeywords = ["React Native", "State Management", "TypeScript"], 
   roast = "CV lu kurang menjual bro, HRD duluan yang ngantuk sebelum kelar baca.",
   pdfName,
-  sessionId,
+  cvText,
+  jobDescription,
   onReset 
 }: ResultScoreProps) {
   const [animatedScore, setAnimatedScore] = useState(0);
@@ -50,11 +52,14 @@ export function ResultScore({
   const [loadingCheckout, setLoadingCheckout] = useState(false);
   const [qrImageUrl, setQrImageUrl] = useState<string | null>(null);
   const [paymentStatus, setPaymentStatus] = useState<"PENDING" | "PAID">("PENDING");
+  const [paymentToken, setPaymentToken] = useState<string | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [isSimulating, setIsSimulating] = useState(false);
   
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  // Use a stable sessionId for payment flow
+  const sessionId = React.useRef(crypto.randomUUID()).current;
 
   // Animate score from 0 to actual score on mount
   useEffect(() => {
@@ -73,10 +78,10 @@ export function ResultScore({
   // Poll payment status while modal is open
   useEffect(() => {
     if (isCheckoutOpen && paymentStatus !== "PAID") {
-      // Start polling status
       pollingIntervalRef.current = setInterval(async () => {
         try {
-          const res = await fetch(`/api/check-payment?sessionId=${sessionId}`);
+          if (!paymentToken) return;
+          const res = await fetch(`/api/check-payment?paymentToken=${paymentToken}`);
           if (res.ok) {
             const data = await res.json();
             if (data.status === "PAID") {
@@ -90,7 +95,6 @@ export function ResultScore({
         }
       }, 3000);
     } else {
-      // Stop polling when closed
       if (pollingIntervalRef.current) {
         clearInterval(pollingIntervalRef.current);
         pollingIntervalRef.current = null;
@@ -103,7 +107,7 @@ export function ResultScore({
         pollingIntervalRef.current = null;
       }
     };
-  }, [isCheckoutOpen, paymentStatus, sessionId]);
+  }, [isCheckoutOpen, paymentStatus, paymentToken]);
 
   const handleCheckout = async () => {
     setLoadingCheckout(true);
@@ -137,6 +141,9 @@ export function ResultScore({
         body: JSON.stringify({ sessionId }),
       });
       if (res.ok) {
+        const data = await res.json();
+        // Store the signed payment token returned by server
+        setPaymentToken(data.paymentToken);
         setPaymentStatus("PAID");
         setIsCheckoutOpen(false);
       } else {
@@ -151,13 +158,14 @@ export function ResultScore({
   };
 
   const handleDownloadPdf = async () => {
-    if (paymentStatus !== "PAID") return;
+    if (paymentStatus !== "PAID" || !paymentToken) return;
     setIsDownloading(true);
     try {
       const res = await fetch("/api/generate-pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId }),
+        // Send all data directly — no server-side session lookup needed
+        body: JSON.stringify({ cvText, jobDescription, pdfName, paymentToken }),
       });
 
       if (!res.ok) {
@@ -165,12 +173,10 @@ export function ResultScore({
         throw new Error(errorData.message || "Gagal membuat CV.");
       }
 
-      // API now returns HTML — open in a new tab so browser can print-to-PDF
       const html = await res.text();
       const blob = new Blob([html], { type: "text/html" });
       const url = URL.createObjectURL(blob);
       window.open(url, "_blank");
-      // Clean up after a delay to let the tab load
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (err: any) {
       console.error("Error generating CV:", err);
