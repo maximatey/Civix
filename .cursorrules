@@ -1,0 +1,14 @@
+Act as a Lead Full-Stack Software Engineer. We are building a B2C web application called 'LolosKerja' (an ATS Resume Optimizer for the Indonesian job market). 
+
+TECH STACK:
+- Framework: Next.js 14 (App Router) with TypeScript
+- Styling: Tailwind CSS & shadcn/ui components
+- Backend: Next.js API Routes (Node.js edge/serverless)
+- Payment Gateway: Midtrans Core API (strictly for QRIS generation and webhooks)
+- PDF Handling: 'pdf-parse' (for reading) and 'puppeteer-core' or 'jspdf' (for generating the final output)
+
+ARCHITECTURE & MONETIZATION RULES:
+- The app operates on a frictionless "Freemium" model. No user login (no Auth) is required.
+- Free Tier: Users upload a PDF and Job Description. The app extracts the text, sends it to the LLM, and returns an ATS Score (0-100) and 3 missing keywords.
+- Paid Tier (Rp 25.000): Users scan a QRIS code. A Midtrans webhook unlocks the premium generation. The LLM completely rewrites the CV using the "Harvard Framework" (Action Verb + Task + Metric), and the app generates a downloadable, black-and-white, ATS-friendly PDF.
+- All code must be modular, properly typed, and ready for Vercel deployment. Do not use dummy placeholders for API calls; write the actual implementation.
